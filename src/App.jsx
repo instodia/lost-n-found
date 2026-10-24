@@ -15,6 +15,7 @@ import { ItemDetailView } from './components/details/ItemDetailView';
 import { GpsRadarView } from './components/map/GpsRadarView';
 import { UserDashboardView } from './components/dashboard/UserDashboardView';
 import { AdminDashboardView } from './components/admin/AdminDashboardView';
+import { AuthPage } from './components/auth/AuthPage';
 import { ClaimModal } from './components/claim/ClaimModal';
 import { SmartMatchModal } from './components/claim/SmartMatchModal';
 import {
@@ -95,10 +96,11 @@ function MainApp() {
     if (!currentUser) {
       addToast({
         title: 'Sign In Required',
-        message: 'Please sign in with your User ID (e.g. user1 or admin1) to report an item.',
+        message: 'Please sign in or create an account to report an item.',
         type: 'info',
       });
-      setAuthModalOpen(true);
+      setCurrentView('login');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     setReportInitialType(type);
@@ -238,6 +240,21 @@ function MainApp() {
               />
             )}
 
+            {/* LOGIN & SIGN UP PAGE */}
+            {(currentView === 'login' || currentView === 'signup') && (
+              <AuthPage
+                initialMode={currentView === 'signup' ? 'signup' : 'login'}
+                onSuccess={() => {
+                  setCurrentView('home');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                onNavigateHome={() => {
+                  setCurrentView('home');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              />
+            )}
+
             {/* GPS RADAR MAP VIEW */}
             {currentView === 'map' && (
               <GpsRadarView
@@ -270,10 +287,11 @@ function MainApp() {
                   if (!currentUser) {
                     addToast({
                       title: 'Sign In Required',
-                      message: 'Please sign in to submit an ownership claim.',
+                      message: 'Please sign in or create an account to submit an ownership claim.',
                       type: 'info',
                     });
-                    setAuthModalOpen(true);
+                    setCurrentView('login');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                     return;
                   }
                   setClaimModalItem(itemToClaim);

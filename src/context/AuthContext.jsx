@@ -4,20 +4,34 @@ import { SYSTEM_ACCOUNTS } from '../types';
 const AuthContext = createContext();
 
 const AUTH_STORAGE_KEY = 'findit_current_user_v2';
+const REGISTERED_USERS_KEY = 'findit_registered_users_v2';
 
 export const AuthProvider = ({ children }) => {
+  // Registered users persistent list (initialized with official system accounts)
+  const [registeredUsers, setRegisteredUsers] = useState(() => {
+    const saved = localStorage.getItem(REGISTERED_USERS_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return SYSTEM_ACCOUNTS;
+  });
+
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem(AUTH_STORAGE_KEY);
     if (saved) {
       try {
         return JSON.parse(saved);
-      } catch (e) {
-        // fallback
-      }
+      } catch (e) {}
     }
-    // Start with null so user logs in, or restore previous session
     return null;
   });
+
+  useEffect(() => {
+    localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(registeredUsers));
+  }, [registeredUsers]);
 
   useEffect(() => {
     if (currentUser) {
@@ -31,10 +45,13 @@ export const AuthProvider = ({ children }) => {
     const cleanId = (identifier || '').trim().toLowerCase();
     const cleanPass = (password || '').trim();
 
-    // Check against official system accounts
-    const matched = SYSTEM_ACCOUNTS.find(
+    if (!cleanId || !cleanPass) {
+      return { success: false, message: 'Please enter both your email/username and password.' };
+    }
+
+    const matched = registeredUsers.find(
       (acc) =>
-        (acc.username.toLowerCase() === cleanId || acc.email.toLowerCase() === cleanId) &&
+        (acc.username?.toLowerCase() === cleanId || acc.email?.toLowerCase() === cleanId) &&
         acc.password === cleanPass
     );
 
@@ -45,22 +62,41 @@ export const AuthProvider = ({ children }) => {
 
     return {
       success: false,
-      message: 'Invalid login credentials. Please use an authorized ID and password (e.g. ID: admin1, Pass: admin1).',
+      message: 'Invalid email or password. Please check your credentials or create a new account.',
     };
   };
 
-  const signup = ({ name, email, phone }) => {
+  const signup = ({ name, email, phone, password }) => {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanName = (name || '').trim();
+    const cleanPass = (password || '').trim();
+
+    if (!cleanName || !cleanEmail || !cleanPass) {
+      return { success: false, message: 'Please fill in all required fields (Name, Email, Password).' };
+    }
+
+    const existing = registeredUsers.find(
+      (u) => u.email?.toLowerCase() === cleanEmail || u.username?.toLowerCase() === cleanEmail.split('@')[0]
+    );
+
+    if (existing) {
+      return { success: false, message: 'An account with this email already exists. Please log in.' };
+    }
+
     const newUser = {
       id: `user-${Date.now()}`,
-      username: email.split('@')[0],
-      name,
-      email,
-      phone: phone || '',
+      username: cleanEmail.split('@')[0],
+      password: cleanPass,
+      name: cleanName,
+      email: cleanEmail,
+      phone: (phone || '').trim(),
       role: 'user',
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`,
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanName)}`,
       joinedDate: new Date().toISOString().split('T')[0],
       verified: true,
     };
+
+    setRegisteredUsers((prev) => [newUser, ...prev]);
     setCurrentUser(newUser);
     return { success: true, user: newUser };
   };

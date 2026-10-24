@@ -44,7 +44,9 @@ export const Navbar = ({ currentView, setCurrentView, openAuthModal, onQuickSear
 
   const handleNavClick = (viewId) => {
     if ((viewId === 'dashboard' || viewId === 'report') && !currentUser) {
-      openAuthModal();
+      setCurrentView('login');
+      setMobileMenuOpen(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     setCurrentView(viewId);
@@ -202,12 +204,20 @@ export const Navbar = ({ currentView, setCurrentView, openAuthModal, onQuickSear
                   )}
                 </div>
               ) : (
-                <button
-                  onClick={openAuthModal}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-brand-600 text-white hover:bg-brand-500 transition-colors shadow-sm"
-                >
-                  Sign In
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleNavClick('login')}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 hover:text-brand-600 hover:bg-slate-100 transition-colors"
+                  >
+                    Sign In
+                  </button>
+                  <button
+                    onClick={() => handleNavClick('signup')}
+                    className="hidden sm:inline-flex px-4 py-2 rounded-xl text-xs font-bold bg-brand-600 hover:bg-brand-500 text-white shadow-sm transition-all active:scale-95"
+                  >
+                    Sign Up
+                  </button>
+                </div>
               )}
 
               {/* Mobile Menu Button */}
@@ -256,6 +266,23 @@ export const Navbar = ({ currentView, setCurrentView, openAuthModal, onQuickSear
                   </button>
                 );
               })}
+
+              {!currentUser && (
+                <div className="pt-3 mt-2 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-2">
+                  <button
+                    onClick={() => handleNavClick('login')}
+                    className="w-full py-2.5 rounded-xl text-xs font-bold text-slate-800 dark:text-white bg-slate-100 dark:bg-navy-900 text-center"
+                  >
+                    Sign In
+                  </button>
+                  <button
+                    onClick={() => handleNavClick('signup')}
+                    className="w-full py-2.5 rounded-xl text-xs font-bold text-white bg-brand-600 text-center shadow-sm"
+                  >
+                    Create Free Account
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
