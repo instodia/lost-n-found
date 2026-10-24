@@ -1,6 +1,6 @@
 import { INITIAL_ITEMS, INITIAL_CLAIMS, INITIAL_ACTIVITY_LOGS } from './mockData';
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = '/api';
 
 const STORAGE_KEYS = {
   ITEMS: 'findit_items_v1',
