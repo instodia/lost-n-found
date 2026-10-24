@@ -13,6 +13,7 @@ import {
   LogOut,
   ChevronDown,
   Sparkles,
+  MapPin,
 } from 'lucide-react';
 
 export const Navbar = ({ currentView, setCurrentView, openAuthModal, onQuickSearch }) => {

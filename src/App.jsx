@@ -351,12 +351,51 @@ function MainApp() {
   );
 }
 
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error('ErrorBoundary caught:', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center font-sans">
+          <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mb-3 text-xl font-black">
+            !
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-1">FindIt Portal Recovery</h2>
+          <p className="text-xs text-slate-500 max-w-sm mb-5">
+            A temporary component error occurred. Click below to reload the application cleanly.
+          </p>
+          <button
+            onClick={() => {
+              window.location.href = '/';
+            }}
+            className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition-all active:scale-95"
+          >
+            Reload FindIt Portal
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <MainApp />
-      </ToastProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <ToastProvider>
+          <MainApp />
+        </ToastProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
