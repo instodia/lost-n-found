@@ -82,38 +82,40 @@ export const ItemMiniMap = ({ item, onOpenFullMap }) => {
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    // Beautiful clean CartoDB Voyager tiles (crisp & modern light design)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19,
-      subdomains: 'abcd',
+    // Real Google Maps Streets Tiles (Free, No API key needed, Crisp & Clear)
+    L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+      maxZoom: 20,
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+      attribution: '&copy; Google Maps',
     }).addTo(map);
 
-    // Marker styling based on LOST vs FOUND
+    // Google Maps iconic Teardrop Pin styling
     const isLost = item?.type === 'LOST';
-    const markerColor = isLost ? '#ef4444' : '#10b981';
-    const markerText = isLost ? 'LOST' : 'FOUND';
+    const markerColor = isLost ? '#ea4335' : '#34a853'; // Official Google Red & Google Green
 
-    const customMarkerHtml = `
-      <div style="position: relative; display: flex; align-items: center; justify-content: center;">
-        <div style="position: absolute; width: 36px; height: 36px; border-radius: 9999px; background-color: ${markerColor}; opacity: 0.25; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
-        <div style="position: relative; width: 30px; height: 30px; border-radius: 9999px; background-color: ${markerColor}; border: 3px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.25); display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 9px;">
-          ${markerText.charAt(0)}
-        </div>
+    const googlePinSvg = `
+      <div style="position: relative; display: flex; flex-direction: column; align-items: center; cursor: pointer; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));">
+        <svg width="32" height="40" viewBox="0 0 32 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 0C7.16 0 0 7.16 0 16C0 28 16 40 16 40C16 40 32 28 32 16C32 7.16 24.84 0 16 0Z" fill="${markerColor}"/>
+          <circle cx="16" cy="15" r="7" fill="white"/>
+          <text x="16" y="19" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="11" text-anchor="middle" fill="${markerColor}">${isLost ? '!' : '✓'}</text>
+        </svg>
       </div>
     `;
 
     const customIcon = L.divIcon({
-      html: customMarkerHtml,
-      className: 'custom-item-pin',
-      iconSize: [36, 36],
-      iconAnchor: [18, 18],
+      html: googlePinSvg,
+      className: 'google-maps-pin',
+      iconSize: [32, 40],
+      iconAnchor: [16, 40],
+      popupAnchor: [0, -38],
     });
 
     const itemMarker = L.marker([itemCoords.lat, itemCoords.lng], { icon: customIcon }).addTo(map);
     itemMarker.bindPopup(`
-      <div style="font-family: inherit; font-size: 12px; line-height: 1.4; padding: 4px;">
-        <strong style="color: #0f172a; display: block; margin-bottom: 2px;">${item?.title || 'Item Location'}</strong>
-        <span style="color: #64748b; font-size: 11px;">📍 ${item?.location || 'Verified Location'}</span>
+      <div style="font-family: Roboto, -apple-system, sans-serif; font-size: 12px; line-height: 1.4; padding: 4px;">
+        <strong style="color: #202124; display: block; margin-bottom: 2px;">${item?.title || 'Item Location'}</strong>
+        <span style="color: #5f6368; font-size: 11px;">📍 ${item?.location || 'Verified Location'}</span>
       </div>
     `);
 

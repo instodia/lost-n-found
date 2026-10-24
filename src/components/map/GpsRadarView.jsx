@@ -2,8 +2,6 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { CATEGORIES } from '../../types';
-import { TypeBadge, StatusBadge } from '../common/StatusBadge';
-import { CategoryIcon } from '../common/CategoryIcon';
 import {
   getUserGpsLocation,
   calculateDistanceMeters,
@@ -19,27 +17,52 @@ import {
   Navigation,
   Compass,
   Search,
-  Filter,
-  Sparkles,
-  Layers,
   ChevronRight,
+  Layers,
+  Plus,
+  Minus,
+  Sparkles,
   ExternalLink,
-  ShieldCheck,
-  AlertCircle,
-  Eye,
-  Radio,
+  RotateCcw,
+  Share2,
 } from 'lucide-react';
+
+const MAP_LAYERS = {
+  streets: {
+    name: 'Google Map',
+    url: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    preview: 'https://images.unsplash.com/photo-1524661135-423995f22d0b?w=120&auto=format&fit=crop&q=80',
+    subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+    maxZoom: 20,
+  },
+  satellite: {
+    name: 'Satellite',
+    url: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+    preview: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=120&auto=format&fit=crop&q=80',
+    subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+    maxZoom: 20,
+  },
+  terrain: {
+    name: 'Terrain',
+    url: 'https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}',
+    preview: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=120&auto=format&fit=crop&q=80',
+    subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+    maxZoom: 20,
+  },
+};
 
 export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
+  const tileLayerRef = useRef(null);
   const markersLayerRef = useRef(null);
   const userCircleRef = useRef(null);
   const userMarkerRef = useRef(null);
 
   const [userLocation, setUserLocation] = useState(null);
   const [locating, setLocating] = useState(false);
-  const [gpsError, setGpsError] = useState(null);
+  const [mapType, setMapType] = useState('streets'); // 'streets' | 'satellite' | 'terrain'
+  const [showLayerMenu, setShowLayerMenu] = useState(false);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -48,38 +71,16 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
   const [proximityRadius, setProximityRadius] = useState('ALL'); // 'ALL' | 500 | 1000 | 3000
   const [selectedItemOnMap, setSelectedItemOnMap] = useState(null);
 
-  // Automatically request GPS or check permission on mount
+  // Auto-acquire user location on mount
   useEffect(() => {
     getUserGpsLocation()
-      .then((loc) => {
-        setUserLocation(loc);
-      })
-      .catch((err) => {
-        console.log('GPS initial locate skipped (will use campus center):', err.message);
-      });
+      .then((loc) => setUserLocation(loc))
+      .catch(() => {});
   }, []);
-
-  // Center on user button
-  const handleLocateMe = async () => {
-    setLocating(true);
-    setGpsError(null);
-    try {
-      const loc = await getUserGpsLocation();
-      setUserLocation(loc);
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.flyTo([loc.lat, loc.lng], 16, { duration: 1.2 });
-      }
-    } catch (err) {
-      setGpsError('Could not access GPS. Please ensure location permissions are allowed.');
-    } finally {
-      setLocating(false);
-    }
-  };
 
   // Pre-process items with coordinates & distance calculation
   const mappedItems = useMemo(() => {
     return items.map((item, index) => {
-      // If coordinates exist, use them; otherwise distribute safely around campus
       const coords = item.coordinates || {
         lat: DEFAULT_CAMPUS_CENTER.lat + (index % 4 === 0 ? 0.003 : -0.002) * (index + 1) * 0.4,
         lng: DEFAULT_CAMPUS_CENTER.lng + (index % 3 === 0 ? 0.004 : -0.003) * (index + 1) * 0.4,
@@ -97,7 +98,7 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
     });
   }, [items, userLocation]);
 
-  // Filtered items based on search, type, category, and radius
+  // Filtered items
   const filteredItems = useMemo(() => {
     return mappedItems.filter((item) => {
       if (selectedType !== 'ALL' && item.type !== selectedType) return false;
@@ -119,7 +120,6 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
     });
   }, [mappedItems, selectedType, selectedCategory, searchTerm, proximityRadius]);
 
-  // Sort items for the side drawer: closest first if user location available
   const sortedItems = useMemo(() => {
     return [...filteredItems].sort((a, b) => {
       if (a.distanceMeters !== null && b.distanceMeters !== null) {
@@ -129,7 +129,7 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
     });
   }, [filteredItems]);
 
-  // Initialize Leaflet Map
+  // Initialize Map with Google Maps Tiles
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
@@ -142,18 +142,15 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
         center: initialCenter,
         zoom: 15,
         zoomControl: false,
+        attributionControl: false,
       });
 
-      L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-      // Clean & modern CartoDB Voyager tiles
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
-        subdomains: 'abcd',
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
+      // Default Google Maps Streets Tiles
+      tileLayerRef.current = L.tileLayer(MAP_LAYERS.streets.url, {
+        maxZoom: 20,
+        subdomains: MAP_LAYERS.streets.subdomains,
       }).addTo(map);
 
-      // Marker cluster or layer group
       markersLayerRef.current = L.layerGroup().addTo(map);
       mapInstanceRef.current = map;
     }
@@ -166,42 +163,51 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
     };
   }, []);
 
-  // Update Markers & Radius Circle when items or user location changes
+  // Handle Layer Switching (Google Maps Streets, Satellite, Terrain)
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    if (tileLayerRef.current) {
+      mapInstanceRef.current.removeLayer(tileLayerRef.current);
+    }
+    const layer = MAP_LAYERS[mapType];
+    tileLayerRef.current = L.tileLayer(layer.url, {
+      maxZoom: layer.maxZoom,
+      subdomains: layer.subdomains,
+    }).addTo(mapInstanceRef.current);
+  }, [mapType]);
+
+  // Update Markers & Location Elements
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || !markersLayerRef.current) return;
 
-    // Clear old markers
     markersLayerRef.current.clearLayers();
 
-    // 1. Render User Marker & Proximity Radar Circle
+    // 1. Google Maps style User Location Blip
     if (userLocation) {
       const userHtml = `
         <div style="position: relative; display: flex; align-items: center; justify-content: center;">
-          <div style="position: absolute; width: 44px; height: 44px; border-radius: 9999px; background-color: #3b82f6; opacity: 0.35; animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
-          <div style="position: relative; width: 22px; height: 22px; border-radius: 9999px; background-color: #2563eb; border: 3.5px solid white; box-shadow: 0 4px 14px rgba(37,99,235,0.6); display: flex; align-items: center; justify-content: center;">
-            <div style="width: 6px; height: 6px; border-radius: 9999px; background-color: white;"></div>
-          </div>
+          <div style="position: absolute; width: 36px; height: 36px; border-radius: 9999px; background-color: #4285f4; opacity: 0.25; animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+          <div style="position: relative; width: 18px; height: 18px; border-radius: 9999px; background-color: #1a73e8; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center;"></div>
         </div>
       `;
 
       const userIcon = L.divIcon({
         html: userHtml,
-        className: 'custom-user-radar-pin',
-        iconSize: [44, 44],
-        iconAnchor: [22, 22],
+        className: 'google-user-blip',
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
       });
 
       userMarkerRef.current = L.marker([userLocation.lat, userLocation.lng], { icon: userIcon })
         .addTo(markersLayerRef.current)
         .bindPopup(`
-          <div style="font-family: inherit; font-size: 12px; padding: 4px; text-align: center;">
-            <strong style="color: #1e293b; display: block; font-weight: 800;">📍 Your Current Location</strong>
-            <span style="color: #64748b; font-size: 11px;">GPS Accuracy: ±${userLocation.accuracy || 15}m</span>
+          <div style="font-family: Roboto, -apple-system, sans-serif; font-size: 12px; padding: 4px; text-align: center;">
+            <strong style="color: #202124; display: block; font-weight: 700;">📍 Your Current Location</strong>
+            <span style="color: #5f6368; font-size: 11px;">GPS Accuracy: ±${userLocation.accuracy || 15}m</span>
           </div>
         `);
 
-      // Radar range circle if radius filter is active
       if (userCircleRef.current) {
         userCircleRef.current.remove();
         userCircleRef.current = null;
@@ -211,8 +217,8 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
         const radiusNum = Number(proximityRadius);
         userCircleRef.current = L.circle([userLocation.lat, userLocation.lng], {
           radius: radiusNum,
-          color: '#3b82f6',
-          fillColor: '#3b82f6',
+          color: '#1a73e8',
+          fillColor: '#1a73e8',
           fillOpacity: 0.08,
           weight: 1.5,
           dashArray: '4, 6',
@@ -220,31 +226,32 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
       }
     }
 
-    // 2. Render Item Markers
+    // 2. Google Maps iconic Teardrop Markers
     const markerBounds = [];
 
     filteredItems.forEach((item) => {
       const isLost = item.type === 'LOST';
-      const color = isLost ? '#ef4444' : '#10b981';
-      const bgColor = isLost ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)';
+      const pinColor = isLost ? '#ea4335' : '#34a853'; // Official Google Red & Google Green
 
-      const markerHtml = `
-        <div class="group cursor-pointer" style="position: relative; display: flex; align-items: center; justify-content: center;">
-          <div style="position: absolute; width: 40px; height: 40px; border-radius: 9999px; background-color: ${color}; opacity: 0.25; animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
-          <div style="position: relative; width: 34px; height: 34px; border-radius: 9999px; background: linear-gradient(135deg, ${color}, ${isLost ? '#dc2626' : '#059669'}); border: 3px solid white; box-shadow: 0 4px 14px rgba(0,0,0,0.25); display: flex; align-items: center; justify-content: center; color: white; font-weight: 900; font-size: 11px; transition: transform 0.2s ease;">
-            ${isLost ? '!' : '✓'}
+      const googlePinHtml = `
+        <div class="google-pin-container group" style="position: relative; display: flex; flex-direction: column; align-items: center; cursor: pointer; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35)); transition: transform 0.15s ease;">
+          <svg width="34" height="42" viewBox="0 0 34 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M17 0C7.61 0 0 7.61 0 17C0 29.75 17 42 17 42C17 42 34 29.75 34 17C34 7.61 26.39 0 17 0Z" fill="${pinColor}"/>
+            <circle cx="17" cy="16" r="7.5" fill="white"/>
+            <text x="17" y="20.5" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="11" text-anchor="middle" fill="${pinColor}">${isLost ? '!' : '✓'}</text>
+          </svg>
+          <div style="background-color: white; border-radius: 6px; padding: 2px 6px; margin-top: -3px; box-shadow: 0 1px 4px rgba(0,0,0,0.25); border: 1px solid #dadce0; font-family: Roboto, -apple-system, sans-serif; font-size: 11px; font-weight: 700; color: #202124; white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; pointer-events: none;">
+            ${item.title}
           </div>
-          <span style="position: absolute; bottom: -20px; font-size: 10px; font-weight: 800; background-color: white; color: #0f172a; padding: 1px 6px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); white-space: nowrap; border: 1px solid #e2e8f0; pointer-events: none;">
-            ${item.title.length > 14 ? item.title.slice(0, 14) + '...' : item.title}
-          </span>
         </div>
       `;
 
       const icon = L.divIcon({
-        html: markerHtml,
-        className: 'custom-item-marker',
-        iconSize: [40, 40],
-        iconAnchor: [20, 20],
+        html: googlePinHtml,
+        className: 'custom-google-marker',
+        iconSize: [34, 42],
+        iconAnchor: [17, 42],
+        popupAnchor: [0, -40],
       });
 
       const marker = L.marker([item.coordinates.lat, item.coordinates.lng], { icon })
@@ -252,24 +259,24 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
 
       markerBounds.push([item.coordinates.lat, item.coordinates.lng]);
 
-      // Popup Content
+      // Google Maps Place Card style Popup
       const popupHtml = `
-        <div style="font-family: inherit; width: 230px; padding: 2px;">
-          <div style="position: relative; height: 110px; border-radius: 12px; overflow: hidden; margin-bottom: 8px;">
+        <div style="font-family: Roboto, -apple-system, sans-serif; width: 240px; padding: 2px;">
+          <div style="position: relative; height: 115px; border-radius: 12px; overflow: hidden; margin-bottom: 8px;">
             <img src="${item.images?.[0] || 'https://images.unsplash.com/photo-1584438784894-089d6a62b8fa?w=400'}" style="width: 100%; height: 100%; object-fit: cover;" />
-            <span style="position: absolute; top: 6px; left: 6px; font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 9999px; color: white; background-color: ${isLost ? '#ef4444' : '#10b981'};">
+            <span style="position: absolute; top: 6px; left: 6px; font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 9999px; color: white; background-color: ${isLost ? '#ea4335' : '#34a853'}; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
               ${item.type}
             </span>
-            ${item.distanceMeters !== null ? `<span style="position: absolute; bottom: 6px; right: 6px; font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 6px; background-color: rgba(15,23,42,0.85); color: white;">📍 ${formatDistance(item.distanceMeters)}</span>` : ''}
+            ${item.distanceMeters !== null ? `<span style="position: absolute; bottom: 6px; right: 6px; font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 6px; background-color: rgba(32,33,36,0.9); color: white;">📍 ${formatDistance(item.distanceMeters)}</span>` : ''}
           </div>
-          <h4 style="font-size: 13px; font-weight: 800; color: #0f172a; margin: 0 0 3px 0; line-height: 1.3;">${item.title}</h4>
-          <p style="font-size: 11px; color: #64748b; margin: 0 0 8px 0;">📍 ${item.location}</p>
-          <div style="display: flex; gap: 6px;">
-            <button id="view-btn-${item.id}" style="flex: 1; padding: 6px 10px; font-size: 11px; font-weight: 700; background-color: #4f46e5; color: white; border: none; border-radius: 8px; cursor: pointer;">
+          <h4 style="font-size: 14px; font-weight: 700; color: #202124; margin: 0 0 3px 0; line-height: 1.3;">${item.title}</h4>
+          <p style="font-size: 11px; color: #5f6368; margin: 0 0 10px 0;">📍 ${item.location}</p>
+          <div style="display: flex; gap: 8px;">
+            <button id="view-details-${item.id}" style="flex: 1; padding: 8px 12px; font-size: 11px; font-weight: 700; background-color: #1a73e8; color: white; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
               View Details
             </button>
-            <a href="${getDirectionsUrl(item.coordinates.lat, item.coordinates.lng)}" target="_blank" rel="noopener noreferrer" style="padding: 6px 8px; font-size: 11px; font-weight: 700; background-color: #f1f5f9; color: #334155; text-decoration: none; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-              🧭
+            <a href="${getDirectionsUrl(item.coordinates.lat, item.coordinates.lng)}" target="_blank" rel="noopener noreferrer" style="padding: 8px 12px; font-size: 11px; font-weight: 700; background-color: #f1f3f4; color: #1a73e8; text-decoration: none; border-radius: 8px; display: flex; align-items: center; justify-content: center; border: 1px solid #dadce0;">
+              🧭 Directions
             </a>
           </div>
         </div>
@@ -277,26 +284,46 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
 
       marker.bindPopup(popupHtml);
 
-      // Attach click event for custom popup button
       marker.on('popupopen', () => {
         setSelectedItemOnMap(item);
-        const btn = document.getElementById(`view-btn-${item.id}`);
+        const btn = document.getElementById(`view-details-${item.id}`);
         if (btn) {
           btn.onclick = () => onViewDetails(item.id);
         }
       });
     });
 
-    // If items exist and no manual user override, fit bounds nicely
     if (markerBounds.length > 0 && !selectedItemOnMap) {
       if (userLocation) {
         markerBounds.push([userLocation.lat, userLocation.lng]);
       }
       map.fitBounds(markerBounds, { padding: [50, 50], maxZoom: 16 });
     }
-  }, [filteredItems, userLocation, proximityRadius]);
+  }, [filteredItems, userLocation, proximityRadius, mapType]);
 
-  // Click on side drawer item: fly map to it
+  const handleLocateMe = async () => {
+    setLocating(true);
+    try {
+      const loc = await getUserGpsLocation();
+      setUserLocation(loc);
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.flyTo([loc.lat, loc.lng], 16, { duration: 1.2 });
+      }
+    } catch (err) {
+      console.warn('Geolocation error:', err);
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  const handleZoomIn = () => {
+    if (mapInstanceRef.current) mapInstanceRef.current.zoomIn();
+  };
+
+  const handleZoomOut = () => {
+    if (mapInstanceRef.current) mapInstanceRef.current.zoomOut();
+  };
+
   const handleSelectDrawerItem = (item) => {
     setSelectedItemOnMap(item);
     if (mapInstanceRef.current) {
@@ -307,89 +334,39 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
-      {/* Header Banner */}
-      <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-brand-600 via-indigo-600 to-purple-600 rounded-3xl p-6 sm:p-8 text-white shadow-xl shadow-brand-500/20">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-xs font-bold text-white mb-2">
-            <Radio className="w-3.5 h-3.5 animate-pulse text-emerald-300" />
-            <span>FindIt Live Radar & GPS Mapping</span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            Campus & Metro Lost & Found Radar
-          </h1>
-          <p className="text-sm text-indigo-100 max-w-2xl mt-1">
-            Pinpoint lost and recovered items geographically. View real-time proximity alerts, distance estimates, and turn-by-turn navigation routes.
-          </p>
-        </div>
-
-        {/* GPS Status & Actions */}
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={handleLocateMe}
-            disabled={locating}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white text-brand-700 hover:bg-indigo-50 font-bold text-xs shadow-lg transition-all active:scale-95 disabled:opacity-75"
-          >
-            <Locate className={`w-4 h-4 ${locating ? 'animate-spin text-brand-600' : 'text-brand-600'}`} />
-            <span>{locating ? 'Acquiring GPS...' : userLocation ? 'Recenter My GPS' : 'Enable My GPS'}</span>
-          </button>
-
-          {onReportClick && (
-            <button
-              onClick={() => onReportClick()}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/20 hover:bg-white/30 backdrop-blur-md text-white font-bold text-xs border border-white/30 transition-all active:scale-95"
-            >
-              <MapPin className="w-4 h-4" />
-              <span>Report Item Here</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {gpsError && (
-        <div className="mb-4 p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-            <span>{gpsError}</span>
-          </div>
-          <button onClick={() => setGpsError(null)} className="text-xs font-bold underline">
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      {/* Filter and Control Bar */}
-      <div className="mb-6 p-4 rounded-3xl bg-white border border-slate-200/80 shadow-sm space-y-4">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 animate-fade-in font-sans">
+      {/* Google Maps Style Search & Top Control Bar */}
+      <div className="mb-4 bg-white rounded-2xl border border-slate-200/90 shadow-md p-3 sm:p-4">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-          {/* Search */}
+          {/* Google Search Box */}
           <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Filter radar by item name, location, or tag..."
-              className="w-full pl-10 pr-4 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-800"
+              placeholder="Search Google Map for lost items, campus landmarks, or keywords..."
+              className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
             />
           </div>
 
-          {/* Type Toggle Pills */}
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl">
+          {/* Quick Filter Pills */}
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
             {['ALL', 'LOST', 'FOUND'].map((type) => (
               <button
                 key={type}
                 onClick={() => setSelectedType(type)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                   selectedType === type
                     ? type === 'LOST'
-                      ? 'bg-rose-500 text-white shadow-sm'
+                      ? 'bg-red-500 text-white shadow-sm'
                       : type === 'FOUND'
-                      ? 'bg-emerald-500 text-white shadow-sm'
+                      ? 'bg-emerald-600 text-white shadow-sm'
                       : 'bg-white text-slate-900 shadow-sm'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                {type === 'ALL' ? 'All Pins' : type === 'LOST' ? '🔴 Lost' : '🟢 Found'}
+                {type === 'ALL' ? 'All Items' : type === 'LOST' ? '🔴 Lost' : '🟢 Found'}
               </button>
             ))}
           </div>
@@ -398,7 +375,7 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-700 font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-700 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Categories</option>
             {CATEGORIES.map((cat) => (
@@ -408,99 +385,147 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
             ))}
           </select>
 
-          {/* Proximity Radius Filter */}
-          <div className="flex items-center gap-1">
-            <span className="text-[11px] font-bold text-slate-500 hidden sm:inline">Radar Radius:</span>
-            <select
-              value={proximityRadius}
-              onChange={(e) => setProximityRadius(e.target.value)}
-              disabled={!userLocation}
-              className="px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-700 font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
+          {/* Radar Proximity Dropdown */}
+          <select
+            value={proximityRadius}
+            onChange={(e) => setProximityRadius(e.target.value)}
+            disabled={!userLocation}
+            className="px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-700 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+          >
+            <option value="ALL">Entire Campus Radius</option>
+            <option value="500">Within 500m (Walking)</option>
+            <option value="1000">Within 1 km</option>
+            <option value="3000">Within 3 km</option>
+          </select>
+
+          {/* Report Item Quick Trigger */}
+          {onReportClick && (
+            <button
+              onClick={() => onReportClick()}
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition-all active:scale-95 flex-shrink-0"
             >
-              <option value="ALL">Entire Campus / City</option>
-              <option value="500">Within 500 Meters (Walking)</option>
-              <option value="1000">Within 1 Kilometer</option>
-              <option value="3000">Within 3 Kilometers</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Active Radar Info Badges */}
-        <div className="flex flex-wrap items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 font-semibold text-slate-700">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-              {filteredItems.filter((i) => i.type === 'LOST').length} Lost Items
-            </span>
-            <span className="flex items-center gap-1.5 font-semibold text-slate-700">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-              {filteredItems.filter((i) => i.type === 'FOUND').length} Found Items
-            </span>
-          </div>
-
-          {userLocation ? (
-            <span className="text-[11px] font-semibold text-brand-600 flex items-center gap-1">
-              <Navigation className="w-3 h-3 text-brand-500 animate-pulse" />
-              Your GPS: {formatCoordinates(userLocation.lat, userLocation.lng)}
-            </span>
-          ) : (
-            <span className="text-[11px] text-slate-400">
-              Tip: Click "Enable My GPS" to unlock real-time distance scanning.
-            </span>
+              <MapPin className="w-3.5 h-3.5" />
+              <span>Report Item Here</span>
+            </button>
           )}
         </div>
       </div>
 
-      {/* Main Grid: Interactive Map (8 cols) + Nearby Feed (4 cols) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Map View */}
-        <div className="lg:col-span-8 rounded-3xl overflow-hidden bg-white border border-slate-200/80 shadow-md relative min-h-[560px] flex flex-col">
-          <div ref={mapContainerRef} className="w-full flex-1 z-0 min-h-[560px]" />
+      {/* Main Container: Full Google Map (8 cols) + Side Stream (4 cols) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* Google Map Canvas */}
+        <div className="lg:col-span-8 rounded-3xl overflow-hidden bg-white border border-slate-200 shadow-lg relative min-h-[580px] flex flex-col">
+          {/* Leaflet Canvas */}
+          <div ref={mapContainerRef} className="w-full flex-1 z-0 min-h-[580px]" />
 
-          {/* Quick Floating Legend on top-left of map */}
-          <div className="absolute top-4 left-4 z-[400] bg-white/90 backdrop-blur-md border border-slate-200/80 rounded-2xl p-2.5 shadow-lg text-[11px] space-y-1.5">
-            <div className="flex items-center gap-2 font-bold text-slate-700">
-              <span className="w-3 h-3 rounded-full bg-rose-500 shadow-sm"></span>
-              <span>Lost Item Pinned</span>
+          {/* Google Maps Layer Switcher (Bottom-Left) */}
+          <div className="absolute bottom-5 left-5 z-[400]">
+            <div className="relative">
+              <button
+                onClick={() => setShowLayerMenu(!showLayerMenu)}
+                className="flex items-center gap-2 p-2 pr-3 bg-white hover:bg-slate-50 border border-slate-200 rounded-2xl shadow-xl transition-all active:scale-95 group"
+                title="Switch Map Layers"
+              >
+                <div className="w-8 h-8 rounded-xl overflow-hidden border border-slate-300">
+                  <img
+                    src={MAP_LAYERS[mapType].preview}
+                    alt={MAP_LAYERS[mapType].name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="text-left text-xs">
+                  <span className="block font-bold text-slate-800">Layers</span>
+                  <span className="block text-[10px] text-slate-500 capitalize">{MAP_LAYERS[mapType].name}</span>
+                </div>
+              </button>
+
+              {/* Popup Layer Menu */}
+              {showLayerMenu && (
+                <div className="absolute bottom-14 left-0 bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 flex gap-2 animate-fade-in">
+                  {Object.entries(MAP_LAYERS).map(([key, config]) => (
+                    <button
+                      key={key}
+                      onClick={() => {
+                        setMapType(key);
+                        setShowLayerMenu(false);
+                      }}
+                      className={`flex flex-col items-center p-1.5 rounded-xl transition-all ${
+                        mapType === key ? 'ring-2 ring-blue-600 bg-blue-50/50' : 'hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="w-14 h-12 rounded-lg overflow-hidden border border-slate-200 mb-1">
+                        <img src={config.preview} alt={config.name} className="w-full h-full object-cover" />
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-700">{config.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-2 font-bold text-slate-700">
-              <span className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm"></span>
-              <span>Found Item Pinned</span>
+          </div>
+
+          {/* Google Maps Floating Controls (Bottom-Right) */}
+          <div className="absolute bottom-5 right-5 z-[400] flex flex-col gap-2.5">
+            {/* Locate Me Target Button */}
+            <button
+              onClick={handleLocateMe}
+              disabled={locating}
+              className="w-10 h-10 rounded-2xl bg-white border border-slate-200/90 shadow-xl flex items-center justify-center text-slate-700 hover:text-blue-600 hover:bg-slate-50 transition-all active:scale-95"
+              title="Show Your Location"
+            >
+              <Locate className={`w-5 h-5 ${locating ? 'animate-spin text-blue-600' : 'text-slate-700'}`} />
+            </button>
+
+            {/* Zoom In & Out Stack */}
+            <div className="flex flex-col bg-white border border-slate-200/90 rounded-2xl shadow-xl overflow-hidden divide-y divide-slate-100">
+              <button
+                onClick={handleZoomIn}
+                className="w-10 h-10 flex items-center justify-center text-slate-700 hover:bg-slate-50 transition-colors"
+                title="Zoom in"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleZoomOut}
+                className="w-10 h-10 flex items-center justify-center text-slate-700 hover:bg-slate-50 transition-colors"
+                title="Zoom out"
+              >
+                <Minus className="w-4 h-4" />
+              </button>
             </div>
-            {userLocation && (
-              <div className="flex items-center gap-2 font-bold text-blue-600">
-                <span className="w-3 h-3 rounded-full bg-blue-500 animate-ping"></span>
-                <span>Your Location</span>
-              </div>
-            )}
+          </div>
+
+          {/* Google Attribution & Watermark */}
+          <div className="absolute bottom-1 right-24 z-[400] text-[10px] text-slate-600/80 font-medium select-none pointer-events-none bg-white/70 px-2 py-0.5 rounded backdrop-blur-sm">
+            Google Maps &copy; {new Date().getFullYear()}
           </div>
         </div>
 
-        {/* Nearby Items Side Feed (4 cols) */}
-        <div className="lg:col-span-4 flex flex-col h-[560px] bg-white rounded-3xl border border-slate-200/80 shadow-sm p-5">
+        {/* Nearby Stream Sidebar (4 cols) */}
+        <div className="lg:col-span-4 flex flex-col h-[580px] bg-white rounded-3xl border border-slate-200 shadow-sm p-5">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
               <h3 className="text-sm font-extrabold text-slate-900 tracking-tight flex items-center gap-1.5">
-                <Compass className="w-4 h-4 text-brand-600" />
+                <Compass className="w-4 h-4 text-blue-600" />
                 <span>Nearby Radar Stream</span>
               </h3>
               <span className="text-[11px] text-slate-400">
                 {userLocation ? 'Sorted by proximity to your GPS' : 'All campus active listings'}
               </span>
             </div>
-            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-brand-50 text-brand-700 border border-brand-200">
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
               {sortedItems.length}
             </span>
           </div>
 
-          {/* List */}
+          {/* Items list */}
           <div className="flex-1 overflow-y-auto space-y-3 py-3 pr-1">
             {sortedItems.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
                 <MapPin className="w-10 h-10 mb-2 opacity-40 text-slate-300" />
                 <p className="text-xs font-bold text-slate-600">No items in this radius</p>
                 <p className="text-[11px] text-slate-400 mt-1">
-                  Try expanding the radar radius or resetting your filters.
+                  Try expanding the radar radius or resetting filters.
                 </p>
                 <button
                   onClick={() => {
@@ -511,7 +536,7 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
                   }}
                   className="mt-3 px-3 py-1.5 rounded-xl bg-slate-100 text-xs font-semibold text-slate-700 hover:bg-slate-200"
                 >
-                  Reset Radar Range
+                  Reset Range
                 </button>
               </div>
             ) : (
@@ -525,8 +550,8 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
                     onClick={() => handleSelectDrawerItem(item)}
                     className={`p-3 rounded-2xl border transition-all cursor-pointer ${
                       isSelected
-                        ? 'border-brand-500 bg-brand-50/50 shadow-md ring-2 ring-brand-400/20'
-                        : 'border-slate-200/80 hover:border-brand-300 bg-slate-50/50 hover:bg-white hover:shadow-sm'
+                        ? 'border-blue-500 bg-blue-50/50 shadow-md ring-2 ring-blue-400/20'
+                        : 'border-slate-200/80 hover:border-blue-300 bg-slate-50/50 hover:bg-white hover:shadow-sm'
                     }`}
                   >
                     <div className="flex gap-3">
@@ -538,7 +563,7 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
                         />
                         <span
                           className={`absolute bottom-1 left-1 text-[9px] font-black px-1.5 py-0.5 rounded-md text-white ${
-                            isLost ? 'bg-rose-500' : 'bg-emerald-500'
+                            isLost ? 'bg-red-500' : 'bg-emerald-600'
                           }`}
                         >
                           {item.type}
@@ -551,7 +576,7 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
                             {item.title}
                           </h4>
                           {item.distanceMeters !== null && (
-                            <span className="text-[10px] font-black text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded-md flex-shrink-0">
+                            <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-md flex-shrink-0">
                               {formatDistance(item.distanceMeters)}
                             </span>
                           )}
@@ -568,7 +593,7 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
                               e.stopPropagation();
                               onViewDetails(item.id);
                             }}
-                            className="text-brand-600 font-bold hover:underline flex items-center gap-0.5"
+                            className="text-blue-600 font-bold hover:underline flex items-center gap-0.5"
                           >
                             <span>Details</span>
                             <ChevronRight className="w-3 h-3" />
@@ -582,7 +607,7 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
             )}
           </div>
 
-          {/* Bottom Campus Landmarks helper */}
+          {/* Quick Landmarks Jump */}
           <div className="pt-3 border-t border-slate-100">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
               Active Radar Landmarks
@@ -596,7 +621,7 @@ export const GpsRadarView = ({ items = [], onViewDetails, onReportClick }) => {
                       mapInstanceRef.current.flyTo([lm.lat, lm.lng], 16, { duration: 1.0 });
                     }
                   }}
-                  className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 hover:bg-brand-50 hover:text-brand-700 text-slate-600 font-medium transition-colors"
+                  className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 font-medium transition-colors"
                 >
                   📍 {lm.name}
                 </button>
