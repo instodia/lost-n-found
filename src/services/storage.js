@@ -1,5 +1,6 @@
 import { INITIAL_ITEMS, INITIAL_CLAIMS, INITIAL_ACTIVITY_LOGS } from './mockData';
-import { supabase, isSupabaseConfigured } from './supabaseClient';
+
+const API_BASE = 'http://localhost:5000/api';
 
 const STORAGE_KEYS = {
   ITEMS: 'findit_items_v1',
@@ -24,13 +25,17 @@ initializeStorage();
 
 // Storage helper functions
 export const getStoredItems = async () => {
-  if (isSupabaseConfigured()) {
-    try {
-      const { data, error } = await supabase.from('items').select('*').order('created_at', { ascending: false });
-      if (!error && data && data.length > 0) return data;
-    } catch (e) {
-      console.warn('Supabase fetch failed, falling back to local storage', e);
+  try {
+    const res = await fetch(`${API_BASE}/items`);
+    if (res.ok) {
+      const dbItems = await res.json();
+      if (dbItems && dbItems.length > 0) {
+        // Map _id to id for seamless UI compatibility
+        return dbItems.map((item) => ({ ...item, id: item._id || item.id }));
+      }
     }
+  } catch (e) {
+    // Backend offline, fallback to local storage
   }
 
   const raw = localStorage.getItem(STORAGE_KEYS.ITEMS);
@@ -38,18 +43,37 @@ export const getStoredItems = async () => {
 };
 
 export const getStoredItemById = async (id, currentUser = null) => {
+  try {
+    const res = await fetch(`${API_BASE}/items/${id}`);
+    if (res.ok) {
+      const item = await res.json();
+      const mapped = { ...item, id: item._id || item.id };
+      const isReporter = currentUser && currentUser.id === mapped.reporterId;
+      const isAdmin = currentUser && currentUser.role === 'admin';
+      if (!isReporter && !isAdmin) {
+        return {
+          ...mapped,
+          secretDetails: undefined,
+          hasSecretVerification: Boolean(mapped.secretDetails),
+        };
+      }
+      return mapped;
+    }
+  } catch (e) {
+    // fallback
+  }
+
   const items = await getStoredItems();
-  const item = items.find((i) => i.id === id);
+  const item = items.find((i) => (i._id || i.id) === id);
   if (!item) return null;
 
-  // Sanitize secret details if viewer is not the reporter or admin
   const isReporter = currentUser && currentUser.id === item.reporterId;
   const isAdmin = currentUser && currentUser.role === 'admin';
 
   if (!isReporter && !isAdmin) {
     return {
       ...item,
-      secretDetails: undefined, // Hidden for anti-fraud security!
+      secretDetails: undefined,
       hasSecretVerification: Boolean(item.secretDetails),
     };
   }
@@ -58,26 +82,49 @@ export const getStoredItemById = async (id, currentUser = null) => {
 };
 
 export const saveItem = async (itemData, currentUser) => {
-  const items = await getStoredItems();
-  const newItem = {
+  const payload = {
     ...itemData,
-    id: `item-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     status: 'ACTIVE',
-    reporterId: currentUser.id,
-    reporterName: currentUser.name,
-    reporterEmail: currentUser.email,
-    reporterPhone: currentUser.phone || '',
+    reporterId: currentUser?.id || 'guest',
+    reporterName: currentUser?.name || 'Anonymous User',
+    reporterEmail: currentUser?.email || 'user@findit.com',
+    reporterPhone: currentUser?.phone || '',
     viewsCount: 1,
     flagged: false,
+    date: itemData.date || new Date().toISOString().split('T')[0],
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const saved = await res.json();
+      await addActivityLog({
+        text: `${currentUser?.name || 'User'} reported ${saved.type.toLowerCase()} item: "${saved.title}" (Saved to MongoDB)`,
+        type: 'report',
+      });
+      return { ...saved, id: saved._id || saved.id };
+    }
+  } catch (e) {
+    console.warn('Backend API unavailable, saving locally', e);
+  }
+
+  // Fallback to localStorage
+  const items = await getStoredItems();
+  const newItem = {
+    ...payload,
+    id: `item-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     createdAt: new Date().toISOString(),
   };
 
   const updatedItems = [newItem, ...items];
   localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(updatedItems));
 
-  // Add activity log
   await addActivityLog({
-    text: `${currentUser.name} reported ${newItem.type.toLowerCase()} item: "${newItem.title}"`,
+    text: `${currentUser?.name || 'User'} reported ${newItem.type.toLowerCase()} item: "${newItem.title}"`,
     type: 'report',
   });
 
@@ -85,18 +132,25 @@ export const saveItem = async (itemData, currentUser) => {
 };
 
 export const updateItem = async (itemId, patchData, currentUser) => {
+  try {
+    const res = await fetch(`${API_BASE}/items/${itemId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patchData),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      return { ...updated, id: updated._id || updated.id };
+    }
+  } catch (e) {
+    // fallback
+  }
+
   const items = await getStoredItems();
-  const index = items.findIndex((i) => i.id === itemId);
+  const index = items.findIndex((i) => (i._id || i.id) === itemId);
   if (index === -1) throw new Error('Item not found');
 
   const existing = items[index];
-  const isReporter = currentUser && currentUser.id === existing.reporterId;
-  const isAdmin = currentUser && currentUser.role === 'admin';
-
-  if (!isReporter && !isAdmin) {
-    throw new Error('Unauthorized to edit this item');
-  }
-
   const updatedItem = { ...existing, ...patchData };
   items[index] = updatedItem;
   localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(items));
@@ -104,59 +158,77 @@ export const updateItem = async (itemId, patchData, currentUser) => {
 };
 
 export const deleteItem = async (itemId, currentUser) => {
-  const items = await getStoredItems();
-  const existing = items.find((i) => i.id === itemId);
-  if (!existing) throw new Error('Item not found');
-
-  const isReporter = currentUser && currentUser.id === existing.reporterId;
-  const isAdmin = currentUser && currentUser.role === 'admin';
-
-  if (!isReporter && !isAdmin) {
-    throw new Error('Unauthorized to delete this item');
+  try {
+    const res = await fetch(`${API_BASE}/items/${itemId}`, { method: 'DELETE' });
+    if (res.ok) return true;
+  } catch (e) {
+    // fallback
   }
 
-  const remaining = items.filter((i) => i.id !== itemId);
+  const items = await getStoredItems();
+  const remaining = items.filter((i) => (i._id || i.id) !== itemId);
   localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(remaining));
   return true;
 };
 
 // Claims
 export const getStoredClaims = async () => {
+  try {
+    const res = await fetch(`${API_BASE}/claims`);
+    if (res.ok) {
+      const dbClaims = await res.json();
+      if (dbClaims && dbClaims.length > 0) {
+        return dbClaims.map((c) => ({ ...c, id: c._id || c.id }));
+      }
+    }
+  } catch (e) {
+    // fallback
+  }
+
   const raw = localStorage.getItem(STORAGE_KEYS.CLAIMS);
   return raw ? JSON.parse(raw) : INITIAL_CLAIMS;
 };
 
 export const createClaim = async (claimData, currentUser) => {
+  const payload = {
+    ...claimData,
+    claimantId: currentUser?.id || 'guest',
+    claimantName: currentUser?.name || 'Anonymous Claimant',
+    claimantEmail: currentUser?.email || 'claimant@findit.com',
+    claimantPhone: currentUser?.phone || '',
+    status: 'PENDING',
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/claims`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const saved = await res.json();
+      await addActivityLog({
+        text: `${currentUser?.name || 'User'} submitted an ownership claim for "${claimData.itemTitle}" (MongoDB)`,
+        type: 'claim',
+      });
+      return { ...saved, id: saved._id || saved.id };
+    }
+  } catch (e) {
+    console.warn('Backend unavailable, saving claim locally', e);
+  }
+
   const claims = await getStoredClaims();
   const newClaim = {
-    ...claimData,
+    ...payload,
     id: `claim-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    claimantId: currentUser.id,
-    claimantName: currentUser.name,
-    claimantEmail: currentUser.email,
-    claimantPhone: currentUser.phone || '',
-    status: 'PENDING',
     submittedAt: new Date().toISOString(),
   };
 
   const updatedClaims = [newClaim, ...claims];
   localStorage.setItem(STORAGE_KEYS.CLAIMS, JSON.stringify(updatedClaims));
 
-  // Update item status to PENDING_CLAIM
-  try {
-    await updateItem(claimData.itemId, { status: 'PENDING_CLAIM' }, currentUser);
-  } catch (e) {
-    // If not reporter, update status anyway via direct save
-    const items = await getStoredItems();
-    const itemIndex = items.findIndex((i) => i.id === claimData.itemId);
-    if (itemIndex !== -1) {
-      items[itemIndex].status = 'PENDING_CLAIM';
-      localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(items));
-    }
-  }
-
   await addActivityLog({
-    text: `${currentUser.name} submitted an ownership claim for "${claimData.itemTitle}"`,
+    text: `${currentUser?.name || 'User'} submitted an ownership claim for "${claimData.itemTitle}"`,
     type: 'claim',
   });
 
@@ -164,49 +236,29 @@ export const createClaim = async (claimData, currentUser) => {
 };
 
 export const updateClaimStatus = async (claimId, newStatus, reporterNotes = '', currentUser) => {
+  try {
+    const res = await fetch(`${API_BASE}/claims/${claimId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus, reporterNotes }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      return { ...updated, id: updated._id || updated.id };
+    }
+  } catch (e) {
+    // fallback
+  }
+
   const claims = await getStoredClaims();
-  const index = claims.findIndex((c) => c.id === claimId);
+  const index = claims.findIndex((c) => (c._id || c.id) === claimId);
   if (index === -1) throw new Error('Claim not found');
 
   const claim = claims[index];
-  const items = await getStoredItems();
-  const item = items.find((i) => i.id === claim.itemId);
-
-  const isReporter = currentUser && (currentUser.id === claim.reporterId || (item && currentUser.id === item.reporterId));
-  const isAdmin = currentUser && currentUser.role === 'admin';
-
-  if (!isReporter && !isAdmin) {
-    throw new Error('Unauthorized to review this claim');
-  }
-
   claim.status = newStatus;
   claim.reporterNotes = reporterNotes;
   claims[index] = claim;
   localStorage.setItem(STORAGE_KEYS.CLAIMS, JSON.stringify(claims));
-
-  // If approved, update item status to RESOLVED
-  if (newStatus === 'APPROVED' && item) {
-    const itemIndex = items.findIndex((i) => i.id === item.id);
-    if (itemIndex !== -1) {
-      items[itemIndex].status = 'RESOLVED';
-      localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(items));
-    }
-  } else if (newStatus === 'REJECTED' && item) {
-    // Check if other pending claims exist
-    const otherPending = claims.filter((c) => c.itemId === item.id && c.id !== claimId && c.status === 'PENDING');
-    if (otherPending.length === 0) {
-      const itemIndex = items.findIndex((i) => i.id === item.id);
-      if (itemIndex !== -1) {
-        items[itemIndex].status = 'ACTIVE';
-        localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(items));
-      }
-    }
-  }
-
-  await addActivityLog({
-    text: `Claim for "${claim.itemTitle}" was ${newStatus.toLowerCase()} by ${currentUser.name}`,
-    type: 'claim',
-  });
 
   return claim;
 };
@@ -230,7 +282,6 @@ export const addActivityLog = async ({ text, type = 'info' }) => {
   return updatedLogs;
 };
 
-// Reset to initial mock data (helpful for testing & demo)
 export const resetToDemoData = () => {
   localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(INITIAL_ITEMS));
   localStorage.setItem(STORAGE_KEYS.CLAIMS, JSON.stringify(INITIAL_CLAIMS));
