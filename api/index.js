@@ -16,30 +16,40 @@ app.use(express.json({ limit: '15mb' }));
 let isConnected = false;
 
 const connectDB = async () => {
-  if (isConnected) return;
+  if (isConnected && mongoose.connection.readyState === 1) return;
   try {
     const mongoUri =
       process.env.MONGODB_URI ||
       'mongodb+srv://instodia:srgi-project@cluster0.sobnsav.mongodb.net/findit?retryWrites=true&w=majority';
     const db = await mongoose.connect(mongoUri, {
       bufferCommands: false,
+      serverSelectionTimeoutMS: 3000, // Timeout after 3 seconds if DB unreachable
     });
     isConnected = db.connections[0].readyState === 1;
     console.log('✅ Serverless Connected to MongoDB Atlas');
   } catch (err) {
-    console.error('❌ Serverless MongoDB Connection Error:', err);
+    isConnected = false;
+    console.error('❌ Serverless MongoDB Connection Error:', err.message);
   }
 };
 
 // Middleware to ensure DB is connected before request
 app.use(async (req, res, next) => {
-  await connectDB();
+  try {
+    await connectDB();
+  } catch (e) {
+    // avoid unhandled rejection
+  }
   next();
 });
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', serverless: true, database: isConnected ? 'connected' : 'disconnected' });
+  res.json({
+    status: 'ok',
+    serverless: true,
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+  });
 });
 
 // --- ITEMS API ---
@@ -47,6 +57,9 @@ app.get('/api/health', (req, res) => {
 // 1. Get all items
 app.get('/api/items', async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database connecting or unavailable' });
+    }
     const items = await Item.find().sort({ createdAt: -1 });
     res.json(items);
   } catch (error) {

@@ -23,10 +23,24 @@ const initializeStorage = () => {
 
 initializeStorage();
 
+// Safe fetch with 2.5s timeout to prevent UI freezes on cloud/cold starts
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 2500) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+};
+
 // Storage helper functions
 export const getStoredItems = async () => {
   try {
-    const res = await fetch(`${API_BASE}/items`);
+    const res = await fetchWithTimeout(`${API_BASE}/items`);
     if (res.ok) {
       const dbItems = await res.json();
       if (dbItems && dbItems.length > 0) {
@@ -35,7 +49,7 @@ export const getStoredItems = async () => {
       }
     }
   } catch (e) {
-    // Backend offline, fallback to local storage
+    // Backend offline or timed out, fallback to local storage
   }
 
   const raw = localStorage.getItem(STORAGE_KEYS.ITEMS);
@@ -44,7 +58,7 @@ export const getStoredItems = async () => {
 
 export const getStoredItemById = async (id, currentUser = null) => {
   try {
-    const res = await fetch(`${API_BASE}/items/${id}`);
+    const res = await fetchWithTimeout(`${API_BASE}/items/${id}`, {}, 2500);
     if (res.ok) {
       const item = await res.json();
       const mapped = { ...item, id: item._id || item.id };
@@ -95,11 +109,15 @@ export const saveItem = async (itemData, currentUser) => {
   };
 
   try {
-    const res = await fetch(`${API_BASE}/items`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    const res = await fetchWithTimeout(
+      `${API_BASE}/items`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+      4000
+    );
     if (res.ok) {
       const saved = await res.json();
       await addActivityLog({
@@ -133,11 +151,15 @@ export const saveItem = async (itemData, currentUser) => {
 
 export const updateItem = async (itemId, patchData, currentUser) => {
   try {
-    const res = await fetch(`${API_BASE}/items/${itemId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patchData),
-    });
+    const res = await fetchWithTimeout(
+      `${API_BASE}/items/${itemId}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patchData),
+      },
+      3000
+    );
     if (res.ok) {
       const updated = await res.json();
       return { ...updated, id: updated._id || updated.id };
@@ -159,7 +181,7 @@ export const updateItem = async (itemId, patchData, currentUser) => {
 
 export const deleteItem = async (itemId, currentUser) => {
   try {
-    const res = await fetch(`${API_BASE}/items/${itemId}`, { method: 'DELETE' });
+    const res = await fetchWithTimeout(`${API_BASE}/items/${itemId}`, { method: 'DELETE' }, 3000);
     if (res.ok) return true;
   } catch (e) {
     // fallback
@@ -174,7 +196,7 @@ export const deleteItem = async (itemId, currentUser) => {
 // Claims
 export const getStoredClaims = async () => {
   try {
-    const res = await fetch(`${API_BASE}/claims`);
+    const res = await fetchWithTimeout(`${API_BASE}/claims`, {}, 2500);
     if (res.ok) {
       const dbClaims = await res.json();
       if (dbClaims && dbClaims.length > 0) {
@@ -200,11 +222,15 @@ export const createClaim = async (claimData, currentUser) => {
   };
 
   try {
-    const res = await fetch(`${API_BASE}/claims`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    const res = await fetchWithTimeout(
+      `${API_BASE}/claims`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+      4000
+    );
     if (res.ok) {
       const saved = await res.json();
       await addActivityLog({
@@ -237,11 +263,15 @@ export const createClaim = async (claimData, currentUser) => {
 
 export const updateClaimStatus = async (claimId, newStatus, reporterNotes = '', currentUser) => {
   try {
-    const res = await fetch(`${API_BASE}/claims/${claimId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus, reporterNotes }),
-    });
+    const res = await fetchWithTimeout(
+      `${API_BASE}/claims/${claimId}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus, reporterNotes }),
+      },
+      3000
+    );
     if (res.ok) {
       const updated = await res.json();
       return { ...updated, id: updated._id || updated.id };

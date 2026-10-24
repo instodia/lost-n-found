@@ -76,6 +76,11 @@ function MainApp() {
 
   useEffect(() => {
     refreshData();
+    // Safety guard: Ensure loading spinner never hangs more than 2 seconds
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 2000);
+    return () => clearTimeout(safetyTimer);
   }, []);
 
   // Navigation helpers
