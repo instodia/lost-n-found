@@ -4,6 +4,8 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import Item from '../server/models/Item.js';
 import Claim from '../server/models/Claim.js';
+import User from '../server/models/User.js';
+import ActivityLog from '../server/models/ActivityLog.js';
 
 dotenv.config();
 
@@ -176,6 +178,114 @@ app.put('/api/claims/:id', async (req, res) => {
     }
 
     res.json(claim);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// --- AUTH API ---
+
+// Signup
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    if (mongoose.connection.readyState !== 1) await connectDB();
+    const { name, email, phone, password, role } = req.body;
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanName = (name || '').trim();
+    const cleanPass = (password || '').trim();
+
+    if (!cleanEmail || !cleanName || !cleanPass) {
+      return res.status(400).json({ error: 'Name, email and password are required.' });
+    }
+
+    const existing = await User.findOne({ email: cleanEmail });
+    if (existing) {
+      return res.status(400).json({ error: 'An account with this email already exists.' });
+    }
+
+    const newUser = new User({
+      name: cleanName,
+      email: cleanEmail,
+      username: cleanEmail.split('@')[0],
+      phone: (phone || '').trim(),
+      password: cleanPass,
+      role: role || 'user',
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanName)}`,
+      joinedDate: new Date().toISOString().split('T')[0],
+      verified: true,
+    });
+
+    const saved = await newUser.save();
+    const userRes = saved.toObject();
+    userRes.id = userRes._id;
+    delete userRes.password;
+    res.status(201).json(userRes);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Login
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    if (mongoose.connection.readyState !== 1) await connectDB();
+    const { identifier, password } = req.body;
+    const cleanId = (identifier || '').trim().toLowerCase();
+    const cleanPass = (password || '').trim();
+
+    if (!cleanId || !cleanPass) {
+      return res.status(400).json({ error: 'Please enter identifier and password.' });
+    }
+
+    const user = await User.findOne({
+      $or: [{ email: cleanId }, { username: cleanId }],
+      password: cleanPass,
+    });
+
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const userRes = user.toObject();
+    userRes.id = userRes._id;
+    delete userRes.password;
+    res.json({ success: true, user: userRes });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get users
+app.get('/api/auth/users', async (req, res) => {
+  try {
+    if (mongoose.connection.readyState !== 1) await connectDB();
+    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    res.json(users.map((u) => ({ ...u.toObject(), id: u._id })));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- ACTIVITY LOGS API ---
+
+// Get activity logs
+app.get('/api/activity-logs', async (req, res) => {
+  try {
+    if (mongoose.connection.readyState !== 1) await connectDB();
+    const logs = await ActivityLog.find().sort({ createdAt: -1 }).limit(30);
+    res.json(logs.map((l) => ({ ...l.toObject(), id: l._id })));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create activity log
+app.post('/api/activity-logs', async (req, res) => {
+  try {
+    if (mongoose.connection.readyState !== 1) await connectDB();
+    const newLog = new ActivityLog(req.body);
+    const saved = await newLog.save();
+    res.status(201).json({ ...saved.toObject(), id: saved._id });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

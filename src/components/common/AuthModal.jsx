@@ -16,7 +16,7 @@ export const AuthModal = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -25,7 +25,7 @@ export const AuthModal = ({ isOpen, onClose }) => {
         setErrorMsg('Please provide your name, email, and password.');
         return;
       }
-      const res = signup({ name, email: identifier, phone, password });
+      const res = await signup({ name, email: identifier, phone, password });
       if (res.success) {
         addToast({ title: 'Account Registered', message: `Welcome to FindIt, ${name}!`, type: 'success' });
         onClose();
@@ -37,7 +37,7 @@ export const AuthModal = ({ isOpen, onClose }) => {
         setErrorMsg('Please enter both your email/ID and password.');
         return;
       }
-      const res = login(identifier, password);
+      const res = await login(identifier, password);
       if (res.success) {
         addToast({
           title: 'Logged In Successfully',

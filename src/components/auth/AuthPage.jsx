@@ -46,7 +46,7 @@ export const AuthPage = ({ initialMode = 'login', onSuccess, onNavigateHome }) =
 
     setLoading(true);
     try {
-      const res = login(identifier, password);
+      const res = await login(identifier, password);
       if (res.success) {
         addToast({
           title: 'Welcome Back!',
@@ -83,7 +83,7 @@ export const AuthPage = ({ initialMode = 'login', onSuccess, onNavigateHome }) =
 
     setLoading(true);
     try {
-      const res = signup({ name, email, phone, password });
+      const res = await signup({ name, email, phone, password });
       if (res.success) {
         addToast({
           title: 'Account Created Successfully!',

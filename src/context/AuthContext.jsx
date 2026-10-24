@@ -41,7 +41,7 @@ export const AuthProvider = ({ children }) => {
     }
   }, [currentUser]);
 
-  const login = (identifier, password) => {
+  const login = async (identifier, password) => {
     const cleanId = (identifier || '').trim().toLowerCase();
     const cleanPass = (password || '').trim();
 
@@ -49,6 +49,26 @@ export const AuthProvider = ({ children }) => {
       return { success: false, message: 'Please enter both your email/username and password.' };
     }
 
+    // 1. First attempt Cloud Login via MongoDB Atlas
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: cleanId, password: cleanPass }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          const userObj = { ...data.user, id: data.user._id || data.user.id };
+          setCurrentUser(userObj);
+          return { success: true, user: userObj };
+        }
+      }
+    } catch (apiErr) {
+      console.warn('Cloud login fetch error, trying local:', apiErr);
+    }
+
+    // 2. Fallback to local registered users or system accounts (offline/fallback)
     const matched = registeredUsers.find(
       (acc) =>
         (acc.username?.toLowerCase() === cleanId || acc.email?.toLowerCase() === cleanId) &&
@@ -66,7 +86,7 @@ export const AuthProvider = ({ children }) => {
     };
   };
 
-  const signup = ({ name, email, phone, password }) => {
+  const signup = async ({ name, email, phone, password }) => {
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanName = (name || '').trim();
     const cleanPass = (password || '').trim();
@@ -75,6 +95,30 @@ export const AuthProvider = ({ children }) => {
       return { success: false, message: 'Please fill in all required fields (Name, Email, Password).' };
     }
 
+    // 1. Attempt Cloud Signup via MongoDB Atlas
+    try {
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: cleanName, email: cleanEmail, phone, password: cleanPass }),
+      });
+      if (res.ok) {
+        const savedUser = await res.json();
+        const userObj = { ...savedUser, id: savedUser._id || savedUser.id };
+        setRegisteredUsers((prev) => [userObj, ...prev.filter((u) => u.email !== cleanEmail)]);
+        setCurrentUser(userObj);
+        return { success: true, user: userObj };
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        if (errJson.error && errJson.error.includes('already exists')) {
+          return { success: false, message: errJson.error };
+        }
+      }
+    } catch (apiErr) {
+      console.warn('Cloud signup fetch error, saving locally:', apiErr);
+    }
+
+    // 2. Fallback to localStorage
     const existing = registeredUsers.find(
       (u) => u.email?.toLowerCase() === cleanEmail || u.username?.toLowerCase() === cleanEmail.split('@')[0]
     );

@@ -310,21 +310,57 @@ export const updateClaimStatus = async (claimId, newStatus, reporterNotes = '', 
   return claim;
 };
 
-// Activity Logs
+// Activity Logs (Synced with MongoDB Atlas)
 export const getActivityLogs = async () => {
+  try {
+    const res = await fetchWithTimeout(`${API_BASE}/activity-logs`, {}, 5000);
+    if (res.ok) {
+      const dbLogs = await res.json();
+      if (Array.isArray(dbLogs) && dbLogs.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(dbLogs));
+        return dbLogs;
+      }
+    }
+  } catch (e) {
+    console.warn('Could not fetch cloud logs, falling back to local storage', e);
+  }
+
   const raw = localStorage.getItem(STORAGE_KEYS.LOGS);
   return raw ? JSON.parse(raw) : INITIAL_ACTIVITY_LOGS;
 };
 
 export const addActivityLog = async ({ text, type = 'info' }) => {
-  const logs = await getActivityLogs();
   const newLog = {
-    id: `act-${Date.now()}`,
     text,
     type,
     timestamp: 'Just now',
   };
-  const updatedLogs = [newLog, ...logs.slice(0, 19)];
+
+  try {
+    const res = await fetchWithTimeout(
+      `${API_BASE}/activity-logs`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newLog),
+      },
+      6000
+    );
+    if (res.ok) {
+      const saved = await res.json();
+      const raw = localStorage.getItem(STORAGE_KEYS.LOGS);
+      const existing = raw ? JSON.parse(raw) : [];
+      const updated = [saved, ...existing.slice(0, 29)];
+      localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(updated));
+      return updated;
+    }
+  } catch (e) {
+    console.warn('Could not save log to MongoDB, saving locally', e);
+  }
+
+  const logs = await getActivityLogs();
+  const localLog = { ...newLog, id: `act-${Date.now()}` };
+  const updatedLogs = [localLog, ...logs.slice(0, 19)];
   localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(updatedLogs));
   return updatedLogs;
 };
