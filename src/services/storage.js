@@ -138,7 +138,7 @@ export const saveItem = async (itemData, currentUser) => {
         text: `${currentUser?.name || 'User'} reported ${saved.type?.toLowerCase() || 'item'}: "${saved.title}" (Saved to Cloud MongoDB)`,
         type: 'report',
       });
-      return mappedSaved;
+      return { ...mappedSaved, isCloud: true };
     } else {
       const errText = await res.text();
       console.warn('API save returned non-200:', res.status, errText);
@@ -153,6 +153,7 @@ export const saveItem = async (itemData, currentUser) => {
     ...payload,
     id: `item-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     createdAt: new Date().toISOString(),
+    isCloud: false,
   };
 
   const updatedItems = [newItem, ...items];

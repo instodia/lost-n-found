@@ -175,13 +175,21 @@ export const ReportItemForm = ({ initialType = ITEM_TYPES.LOST, onSubmitSuccess,
         coordinates: coordinates || null,
       };
 
-      await onSubmitSuccess(itemPayload);
+      const created = await onSubmitSuccess(itemPayload);
       triggerConfetti();
-      addToast({
-        title: 'Listing Published Successfully!',
-        message: `Your ${type.toLowerCase()} report for "${title}" is now active in FindIt`,
-        type: 'success',
-      });
+      if (created && created.isCloud === false) {
+        addToast({
+          title: 'Saved Locally Only ⚠️',
+          message: 'Could not sync to MongoDB cloud. Please refresh the page and try again with a compressed image.',
+          type: 'warning',
+        });
+      } else {
+        addToast({
+          title: 'Published to Cloud! 🌐',
+          message: `Your ${type.toLowerCase()} report for "${title}" is live across all devices!`,
+          type: 'success',
+        });
+      }
     } catch (err) {
       addToast({
         title: 'Submission Failed',

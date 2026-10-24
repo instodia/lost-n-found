@@ -96,6 +96,23 @@ function MainApp() {
     }
   }, [currentView]);
 
+  // Real-time Cloud Polling: Auto-fetch new items from MongoDB Atlas every 5 seconds
+  useEffect(() => {
+    const timer = setInterval(() => {
+      getStoredItems().then((freshItems) => {
+        if (Array.isArray(freshItems) && freshItems.length > 0) {
+          setItems((prev) => {
+            if (prev.length !== freshItems.length || prev[0]?.id !== freshItems[0]?.id) {
+              return freshItems;
+            }
+            return prev;
+          });
+        }
+      }).catch(() => {});
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Navigation helpers
   const handleViewDetails = (itemId) => {
     setSelectedItemId(itemId);
@@ -137,6 +154,7 @@ function MainApp() {
     await refreshData();
     setSelectedItemId(created.id);
     setCurrentView('details');
+    return created;
   };
 
   const handleUpdateItem = async (itemId, patchData) => {
