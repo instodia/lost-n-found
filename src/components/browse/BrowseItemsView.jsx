@@ -23,6 +23,7 @@ export const BrowseItemsView = ({
   initialFilter = {},
   onViewDetails,
   onReportClick,
+  onOpenMap,
 }) => {
   const [searchTerm, setSearchTerm] = useState(initialFilter.keyword || '');
   const [selectedType, setSelectedType] = useState(initialFilter.type || 'ALL');
@@ -342,6 +343,17 @@ export const BrowseItemsView = ({
               <option value="title">Alphabetical (A-Z)</option>
             </select>
           </div>
+
+          {/* GPS Radar Switch Button */}
+          {onOpenMap && (
+            <button
+              onClick={onOpenMap}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 text-xs font-bold transition-all shadow-sm active:scale-95"
+            >
+              <MapPin className="w-3.5 h-3.5 text-brand-600 animate-pulse" />
+              <span>🗺️ GPS Radar</span>
+            </button>
+          )}
 
           {/* View Mode Toggle */}
           <div className="hidden sm:flex items-center p-1 rounded-lg bg-slate-100 dark:bg-navy-900 border border-slate-200 dark:border-slate-800">

@@ -5,6 +5,7 @@ import { CATEGORIES } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { findSmartMatches } from '../../services/smartMatcher';
+import { ItemMiniMap } from '../map/ItemMiniMap';
 import {
   ArrowLeft,
   Calendar,
@@ -31,6 +32,7 @@ export const ItemDetailView = ({
   onOpenMatchModal,
   onMarkRecovered,
   onViewItem,
+  onOpenFullMap,
 }) => {
   const { currentUser } = useAuth();
   const { addToast } = useToast();
@@ -174,33 +176,8 @@ export const ItemDetailView = ({
             </div>
           )}
 
-          {/* Interactive Map Location Widget */}
-          <div className="p-5 rounded-3xl bg-white dark:bg-navy-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-brand-500" /> Incident Location & Drop-off Hub
-            </h3>
-            <div className="relative h-44 rounded-2xl overflow-hidden bg-slate-100 dark:bg-navy-950 border border-slate-200 dark:border-slate-800 flex items-center justify-center">
-              {/* Map background mockup styling */}
-              <div
-                className="absolute inset-0 opacity-40 dark:opacity-20 bg-cover bg-center"
-                style={{
-                  backgroundImage: `radial-gradient(#6366f1 1px, transparent 1px), radial-gradient(#6366f1 1px, #f8fafc 1px)`,
-                  backgroundSize: '24px 24px',
-                }}
-              />
-              <div className="relative z-10 flex flex-col items-center p-3 text-center">
-                <div className="w-10 h-10 rounded-full bg-brand-600 text-white flex items-center justify-center shadow-lg shadow-brand-500/30 mb-2 animate-bounce">
-                  <MapPin className="w-5 h-5" />
-                </div>
-                <span className="text-xs font-bold text-slate-900 dark:text-white max-w-xs">
-                  {item.location}
-                </span>
-                <span className="text-[11px] text-slate-500 mt-0.5">
-                  Verified Public Area • {item.city || 'Metro City'}
-                </span>
-              </div>
-            </div>
-          </div>
+          {/* Real Interactive Leaflet Mini-Map with GPS Distance and Directions */}
+          <ItemMiniMap item={item} onOpenFullMap={onOpenFullMap} />
         </div>
 
         {/* Right Column: Information & Actions (5 cols) */}

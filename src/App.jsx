@@ -12,6 +12,7 @@ import { HowItWorks } from './components/home/HowItWorks';
 import { BrowseItemsView } from './components/browse/BrowseItemsView';
 import { ReportItemForm } from './components/report/ReportItemForm';
 import { ItemDetailView } from './components/details/ItemDetailView';
+import { GpsRadarView } from './components/map/GpsRadarView';
 import { UserDashboardView } from './components/dashboard/UserDashboardView';
 import { AdminDashboardView } from './components/admin/AdminDashboardView';
 import { ClaimModal } from './components/claim/ClaimModal';
@@ -230,6 +231,19 @@ function MainApp() {
                 initialFilter={browseFilter}
                 onViewDetails={handleViewDetails}
                 onReportClick={handleOpenReport}
+                onOpenMap={() => {
+                  setCurrentView('map');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              />
+            )}
+
+            {/* GPS RADAR MAP VIEW */}
+            {currentView === 'map' && (
+              <GpsRadarView
+                items={items}
+                onViewDetails={handleViewDetails}
+                onReportClick={handleOpenReport}
               />
             )}
 
@@ -248,6 +262,10 @@ function MainApp() {
                 item={currentItemObject}
                 allItems={items}
                 onBack={() => setCurrentView('browse')}
+                onOpenFullMap={() => {
+                  setCurrentView('map');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
                 onOpenClaimModal={(itemToClaim) => {
                   if (!currentUser) {
                     addToast({

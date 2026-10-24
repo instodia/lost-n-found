@@ -23,6 +23,7 @@ export const INITIAL_ITEMS = [
     createdAt: '2024-10-21T19:30:00Z',
     viewsCount: 142,
     flagged: false,
+    coordinates: { lat: 28.6142, lng: 77.2088 },
   },
   {
     id: 'item-102',
@@ -47,6 +48,7 @@ export const INITIAL_ITEMS = [
     createdAt: '2024-10-21T21:40:00Z',
     viewsCount: 98,
     flagged: false,
+    coordinates: { lat: 28.6141, lng: 77.2091 },
   },
   {
     id: 'item-103',
@@ -72,6 +74,7 @@ export const INITIAL_ITEMS = [
     createdAt: '2024-10-19T09:15:00Z',
     viewsCount: 215,
     flagged: false,
+    coordinates: { lat: 28.6205, lng: 77.2150 },
   },
   {
     id: 'item-104',
@@ -96,6 +99,7 @@ export const INITIAL_ITEMS = [
     createdAt: '2024-10-19T10:00:00Z',
     viewsCount: 180,
     flagged: false,
+    coordinates: { lat: 28.6208, lng: 77.2154 },
   },
   {
     id: 'item-105',
@@ -121,6 +125,7 @@ export const INITIAL_ITEMS = [
     createdAt: '2024-10-22T15:00:00Z',
     viewsCount: 312,
     flagged: false,
+    coordinates: { lat: 28.6180, lng: 77.2120 },
   },
   {
     id: 'item-106',
@@ -145,6 +150,7 @@ export const INITIAL_ITEMS = [
     createdAt: '2024-10-20T17:15:00Z',
     viewsCount: 76,
     flagged: false,
+    coordinates: { lat: 28.6110, lng: 77.2140 },
   },
   {
     id: 'item-107',
@@ -169,6 +175,7 @@ export const INITIAL_ITEMS = [
     createdAt: '2024-10-18T18:00:00Z',
     viewsCount: 110,
     flagged: false,
+    coordinates: { lat: 28.6080, lng: 77.2050 },
   },
   {
     id: 'item-108',
@@ -193,6 +200,7 @@ export const INITIAL_ITEMS = [
     createdAt: '2024-10-17T14:30:00Z',
     viewsCount: 420,
     flagged: false,
+    coordinates: { lat: 28.6162, lng: 77.2065 },
   },
   {
     id: 'item-109',
@@ -218,6 +226,7 @@ export const INITIAL_ITEMS = [
     createdAt: '2024-10-22T20:00:00Z',
     viewsCount: 650,
     flagged: false,
+    coordinates: { lat: 28.6250, lng: 77.2020 },
   },
   {
     id: 'item-110',
@@ -242,7 +251,8 @@ export const INITIAL_ITEMS = [
     createdAt: '2024-10-22T12:00:00Z',
     viewsCount: 160,
     flagged: false,
-  }
+    coordinates: { lat: 28.6150, lng: 77.2110 },
+  },
 ];
 
 export const INITIAL_CLAIMS = [

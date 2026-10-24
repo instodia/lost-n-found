@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { CATEGORIES, ITEM_TYPES } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { getUserGpsLocation, formatCoordinates, getNearestLandmark } from '../../services/gpsService';
 import {
   Search,
   CheckCircle2,
@@ -18,6 +19,8 @@ import {
   Eye,
   Check,
   X,
+  Locate,
+  Navigation,
 } from 'lucide-react';
 
 const SAMPLE_PRESET_IMAGES = [
@@ -46,8 +49,38 @@ export const ReportItemForm = ({ initialType = ITEM_TYPES.LOST, onSubmitSuccess,
   const [secretDetails, setSecretDetails] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [uploadedImages, setUploadedImages] = useState([]);
+  const [coordinates, setCoordinates] = useState(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [gpsAccuracy, setGpsAccuracy] = useState(null);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+
+  // GPS auto-detection handler
+  const handleDetectGps = async () => {
+    setGpsLoading(true);
+    try {
+      const loc = await getUserGpsLocation();
+      setCoordinates({ lat: loc.lat, lng: loc.lng });
+      setGpsAccuracy(loc.accuracy);
+      const nearest = getNearestLandmark(loc.lat, loc.lng);
+      if (!location.trim() && nearest) {
+        setLocation(`${nearest.name} (${nearest.zone})`);
+      }
+      addToast({
+        title: 'GPS Coordinates Captured',
+        message: `Locked at ${formatCoordinates(loc.lat, loc.lng)} (±${loc.accuracy}m)`,
+        type: 'success',
+      });
+    } catch (err) {
+      addToast({
+        title: 'GPS Access Failed',
+        message: 'Please allow browser location permissions to capture GPS.',
+        type: 'error',
+      });
+    } finally {
+      setGpsLoading(false);
+    }
+  };
 
   // File upload handler converting image to data URL
   const handleFileUpload = (e) => {
@@ -126,6 +159,7 @@ export const ReportItemForm = ({ initialType = ITEM_TYPES.LOST, onSubmitSuccess,
         reward: reward.trim() || null,
         secretDetails: secretDetails.trim() || null,
         images: imagesToSave,
+        coordinates: coordinates || null,
       };
 
       await onSubmitSuccess(itemPayload);
@@ -349,12 +383,41 @@ export const ReportItemForm = ({ initialType = ITEM_TYPES.LOST, onSubmitSuccess,
                       }`}
                     />
                   </div>
-                  {errors.location && (
-                    <p className="text-xs text-rose-500 mt-1 flex items-center gap-1">
-                      <AlertCircle className="w-3.5 h-3.5" />
-                      {errors.location}
-                    </p>
-                  )}
+                  {/* GPS Detection Action */}
+                  <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={handleDetectGps}
+                      disabled={gpsLoading}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all active:scale-95 disabled:opacity-60 shadow-sm"
+                    >
+                      <Locate className={`w-3.5 h-3.5 ${gpsLoading ? 'animate-spin text-indigo-600' : 'text-indigo-600'}`} />
+                      <span>{gpsLoading ? 'Acquiring GPS...' : '📍 Auto-Detect Current GPS Location'}</span>
+                    </button>
+
+                    {coordinates ? (
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span>GPS Locked: {formatCoordinates(coordinates.lat, coordinates.lng)}</span>
+                        {gpsAccuracy && <span className="text-[10px] text-emerald-600">(±{gpsAccuracy}m)</span>}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCoordinates(null);
+                            setGpsAccuracy(null);
+                          }}
+                          className="ml-1 text-slate-400 hover:text-slate-600 font-bold"
+                          title="Remove GPS tag"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-slate-400">
+                        Attaching GPS shows item on the interactive radar map
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

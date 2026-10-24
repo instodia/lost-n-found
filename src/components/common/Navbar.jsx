@@ -32,6 +32,7 @@ export const Navbar = ({ currentView, setCurrentView, openAuthModal, onQuickSear
   const navLinks = [
     { id: 'home', label: 'Home', icon: Compass },
     { id: 'browse', label: 'Browse Items', icon: Search },
+    { id: 'map', label: 'GPS Radar', icon: MapPin, radarBadge: true },
     { id: 'report', label: 'Report Item', icon: PlusCircle, highlight: true },
     { id: 'dashboard', label: 'My Dashboard', icon: LayoutDashboard },
   ];
@@ -115,6 +116,12 @@ export const Navbar = ({ currentView, setCurrentView, openAuthModal, onQuickSear
                   >
                     <Icon className="w-4 h-4" />
                     {link.label}
+                    {link.radarBadge && (
+                      <span className="relative flex h-2 w-2 ml-1">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      </span>
+                    )}
                     {link.adminBadge && (
                       <span className="ml-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-500/20 text-amber-500 border border-amber-500/30">
                         ADMIN
@@ -233,6 +240,12 @@ export const Navbar = ({ currentView, setCurrentView, openAuthModal, onQuickSear
                     <span className="flex items-center gap-2.5">
                       <Icon className="w-4 h-4" />
                       {link.label}
+                      {link.radarBadge && (
+                        <span className="relative flex h-2 w-2 ml-1">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                      )}
                     </span>
                     {link.adminBadge && (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-500">

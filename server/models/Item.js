@@ -73,6 +73,10 @@ const itemSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    coordinates: {
+      lat: { type: Number },
+      lng: { type: Number },
+    },
   },
   {
     timestamps: true,
