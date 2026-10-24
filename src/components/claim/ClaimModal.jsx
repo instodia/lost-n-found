@@ -10,6 +10,7 @@ import {
   FileCheck,
   CheckCircle2,
 } from 'lucide-react';
+import { compressImageFile } from '../../utils/imageCompressor';
 
 export const ClaimModal = ({ isOpen, onClose, item, onSubmitClaim }) => {
   const { currentUser } = useAuth();
@@ -24,15 +25,20 @@ export const ClaimModal = ({ isOpen, onClose, item, onSubmitClaim }) => {
 
   if (!isOpen || !item) return null;
 
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setProofImage(reader.result);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressImageFile(file, 1000, 1000, 0.8);
+      setProofImage(compressed);
+    } catch {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setProofImage(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSubmit = async (e) => {

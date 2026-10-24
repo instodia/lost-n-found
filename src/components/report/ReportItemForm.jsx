@@ -3,6 +3,7 @@ import { CATEGORIES, ITEM_TYPES } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { getUserGpsLocation, formatCoordinates, getNearestLandmark } from '../../services/gpsService';
+import { compressImageFile } from '../../utils/imageCompressor';
 import {
   Search,
   CheckCircle2,
@@ -82,23 +83,35 @@ export const ReportItemForm = ({ initialType = ITEM_TYPES.LOST, onSubmitSuccess,
     }
   };
 
-  // File upload handler converting image to data URL
-  const handleFileUpload = (e) => {
+  // File upload handler converting and compressing image
+  const [compressing, setCompressing] = useState(false);
+  const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      addToast({ title: 'File Too Large', message: 'Images should be under 5MB', type: 'error' });
+    if (file.size > 20 * 1024 * 1024) {
+      addToast({ title: 'File Too Large', message: 'Images should be under 20MB', type: 'error' });
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      setUploadedImages((prev) => [...prev, result]);
-      if (!imageUrl) setImageUrl(result);
-    };
-    reader.readAsDataURL(file);
+    try {
+      setCompressing(true);
+      const compressedDataUrl = await compressImageFile(file, 1200, 1200, 0.82);
+      setUploadedImages((prev) => [...prev, compressedDataUrl]);
+      if (!imageUrl) setImageUrl(compressedDataUrl);
+      addToast({ title: 'Photo Ready', message: 'Photo optimized and attached', type: 'success' });
+    } catch (err) {
+      console.warn('Canvas compression error, using direct reader:', err);
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        setUploadedImages((prev) => [...prev, result]);
+        if (!imageUrl) setImageUrl(result);
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setCompressing(false);
+    }
   };
 
   const removeImage = (indexToRemove) => {

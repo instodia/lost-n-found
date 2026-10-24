@@ -85,6 +85,17 @@ function MainApp() {
     return () => clearTimeout(safetyTimer);
   }, []);
 
+  // Silently re-sync fresh items whenever user opens browse, radar or dashboard
+  useEffect(() => {
+    if (['browse', 'map', 'dashboard'].includes(currentView)) {
+      getStoredItems().then((freshItems) => {
+        if (freshItems && freshItems.length > 0) {
+          setItems(freshItems);
+        }
+      }).catch(() => {});
+    }
+  }, [currentView]);
+
   // Navigation helpers
   const handleViewDetails = (itemId) => {
     setSelectedItemId(itemId);

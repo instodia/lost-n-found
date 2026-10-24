@@ -13,22 +13,30 @@ app.use(cors());
 app.use(express.json({ limit: '15mb' }));
 
 // Cached MongoDB Connection for Serverless Lambdas
-let isConnected = false;
+let cachedPromise = null;
+let lastError = null;
 
 const connectDB = async () => {
-  if (isConnected && mongoose.connection.readyState === 1) return;
-  try {
+  if (mongoose.connection.readyState === 1) return;
+
+  if (!cachedPromise) {
     const mongoUri =
       process.env.MONGODB_URI ||
       'mongodb+srv://instodia:srgi-project@cluster0.sobnsav.mongodb.net/findit?retryWrites=true&w=majority';
-    const db = await mongoose.connect(mongoUri, {
+    cachedPromise = mongoose.connect(mongoUri, {
       bufferCommands: false,
-      serverSelectionTimeoutMS: 3000, // Timeout after 3 seconds if DB unreachable
+      serverSelectionTimeoutMS: 9000,
+      connectTimeoutMS: 9000,
     });
-    isConnected = db.connections[0].readyState === 1;
+  }
+
+  try {
+    await cachedPromise;
+    lastError = null;
     console.log('✅ Serverless Connected to MongoDB Atlas');
   } catch (err) {
-    isConnected = false;
+    cachedPromise = null;
+    lastError = err.message;
     console.error('❌ Serverless MongoDB Connection Error:', err.message);
   }
 };
@@ -44,11 +52,17 @@ app.use(async (req, res, next) => {
 });
 
 // Health check
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+  if (mongoose.connection.readyState !== 1) {
+    try {
+      await connectDB();
+    } catch (e) {}
+  }
   res.json({
     status: 'ok',
     serverless: true,
     database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    error: lastError,
   });
 });
 
@@ -58,7 +72,10 @@ app.get('/api/health', (req, res) => {
 app.get('/api/items', async (req, res) => {
   try {
     if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ error: 'Database connecting or unavailable' });
+      await connectDB();
+    }
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database unavailable: ' + (lastError || 'Connecting...') });
     }
     const items = await Item.find().sort({ createdAt: -1 });
     res.json(items);
@@ -81,10 +98,18 @@ app.get('/api/items/:id', async (req, res) => {
 // 3. Create new item
 app.post('/api/items', async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      await connectDB();
+    }
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database unavailable: ' + (lastError || 'Connecting...') });
+    }
     const newItem = new Item(req.body);
     const saved = await newItem.save();
+    console.log('✅ Item created in MongoDB:', saved._id, saved.title);
     res.status(201).json(saved);
   } catch (error) {
+    console.error('❌ Error creating item:', error.message);
     res.status(400).json({ error: error.message });
   }
 });

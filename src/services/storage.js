@@ -23,8 +23,8 @@ const initializeStorage = () => {
 
 initializeStorage();
 
-// Safe fetch with 2.5s timeout to prevent UI freezes on cloud/cold starts
-const fetchWithTimeout = async (url, options = {}, timeoutMs = 2500) => {
+// Safe fetch with 8s timeout to handle cloud/cold starts reliably
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 8000) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -40,16 +40,20 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 2500) => {
 // Storage helper functions
 export const getStoredItems = async () => {
   try {
-    const res = await fetchWithTimeout(`${API_BASE}/items`);
+    const res = await fetchWithTimeout(`${API_BASE}/items`, {}, 8000);
     if (res.ok) {
       const dbItems = await res.json();
-      if (dbItems && dbItems.length > 0) {
+      if (Array.isArray(dbItems) && dbItems.length > 0) {
         // Map _id to id for seamless UI compatibility
-        return dbItems.map((item) => ({ ...item, id: item._id || item.id }));
+        const mapped = dbItems.map((item) => ({ ...item, id: item._id || item.id }));
+        try {
+          localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(mapped));
+        } catch (e) {}
+        return mapped;
       }
     }
   } catch (e) {
-    // Backend offline or timed out, fallback to local storage
+    console.warn('Backend API unavailable or timed out, fallback to local storage', e);
   }
 
   const raw = localStorage.getItem(STORAGE_KEYS.ITEMS);
@@ -58,7 +62,7 @@ export const getStoredItems = async () => {
 
 export const getStoredItemById = async (id, currentUser = null) => {
   try {
-    const res = await fetchWithTimeout(`${API_BASE}/items/${id}`, {}, 2500);
+    const res = await fetchWithTimeout(`${API_BASE}/items/${id}`, {}, 8000);
     if (res.ok) {
       const item = await res.json();
       const mapped = { ...item, id: item._id || item.id };
@@ -116,15 +120,28 @@ export const saveItem = async (itemData, currentUser) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       },
-      4000
+      15000
     );
     if (res.ok) {
       const saved = await res.json();
+      const mappedSaved = { ...saved, id: saved._id || saved.id };
+
+      // Update local storage cache
+      try {
+        const raw = localStorage.getItem(STORAGE_KEYS.ITEMS);
+        const existing = raw ? JSON.parse(raw) : [];
+        const updated = [mappedSaved, ...existing.filter((i) => (i._id || i.id) !== mappedSaved.id)];
+        localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(updated));
+      } catch (cacheErr) {}
+
       await addActivityLog({
-        text: `${currentUser?.name || 'User'} reported ${saved.type.toLowerCase()} item: "${saved.title}" (Saved to MongoDB)`,
+        text: `${currentUser?.name || 'User'} reported ${saved.type?.toLowerCase() || 'item'}: "${saved.title}" (Saved to Cloud MongoDB)`,
         type: 'report',
       });
-      return { ...saved, id: saved._id || saved.id };
+      return mappedSaved;
+    } else {
+      const errText = await res.text();
+      console.warn('API save returned non-200:', res.status, errText);
     }
   } catch (e) {
     console.warn('Backend API unavailable, saving locally', e);

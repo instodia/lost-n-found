@@ -52,5 +52,5 @@ const claimSchema = new mongoose.Schema(
   }
 );
 
-const Claim = mongoose.model('Claim', claimSchema);
+const Claim = mongoose.models.Claim || mongoose.model('Claim', claimSchema);
 export default Claim;

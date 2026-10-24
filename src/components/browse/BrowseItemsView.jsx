@@ -39,13 +39,15 @@ export const BrowseItemsView = ({
   const filteredItems = useMemo(() => {
     return items
       .filter((item) => {
-        // Search term (title, description, location)
+        // Search term (title, description, location, city, category)
         if (searchTerm.trim()) {
-          const term = searchTerm.toLowerCase();
-          const matchTitle = item.title.toLowerCase().includes(term);
-          const matchDesc = item.description.toLowerCase().includes(term);
-          const matchLoc = item.location.toLowerCase().includes(term);
-          if (!matchTitle && !matchDesc && !matchLoc) return false;
+          const term = searchTerm.toLowerCase().trim();
+          const combined = `${item.title || ''} ${item.description || ''} ${item.location || ''} ${item.city || ''} ${item.category || ''}`.toLowerCase();
+          if (!combined.includes(term)) {
+            const words = term.split(/\s+/).filter(Boolean);
+            const allWordsPresent = words.length > 0 && words.every((w) => combined.includes(w));
+            if (!allWordsPresent) return false;
+          }
         }
 
         // Type filter
